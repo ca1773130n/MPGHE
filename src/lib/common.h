@@ -32,6 +32,7 @@ union LocalMethod {
 
 enum InputSource {
 	IS_IMAGE,
+    IS_VIDEO,
 	IS_WEBCAM,
 	IS_INVALID
 };

@@ -47,7 +47,7 @@ static int SetupOptions(int argc, char *argv[], TestOptions& options)
 		printf("-a : alpha value (double)\n");
 		printf("-b : beta value (double)\n");
 		printf("-f : input filebeta value (double)\n");
-		printf("-i : set input source (string, [image|webcam]) \n");
+		printf("-i : set input source (string, [image|video|webcam]) \n");
 		printf("-m : local window size (integer)\n");
 		printf("-v : local method (string, [laplacian|local_mean])\n");
 		printf("\n");
@@ -81,6 +81,8 @@ static int SetupOptions(int argc, char *argv[], TestOptions& options)
 					options.source = IS_IMAGE;
 				} else if (!strncmp("webcam", optarg, 6)) {
 					options.source = IS_WEBCAM;
+				} else if (!strncmp("video", optarg, 5)) {
+					options.source = IS_VIDEO;
 				} else {
 					printf("input source %s is not supported.\n");
 					options.source = IS_INVALID;
@@ -195,6 +197,7 @@ int main(int argc, char *argv[])
 		cv::namedWindow(WINNAME_HISTOGRAM_HE);
 		cv::namedWindow(WINNAME_HISTOGRAM_MPGHE);
 
+        const char *videoInput = nullptr;
 		while (error == TEST_OK) {
 			Timer timer("processing time of a frame");
 			
@@ -205,9 +208,14 @@ int main(int argc, char *argv[])
 					Preprocess(frame, input, srcChannels, options);
 				}
 				break;
+            case IS_VIDEO:
+                videoInput = options.filepath;
 			case IS_WEBCAM:
 				if (!vidCap)
-					vidCap = new cv::VideoCapture(0);
+                    if (videoInput)
+    					vidCap = new cv::VideoCapture(videoInput);
+    				else
+                        vidCap = new cv::VideoCapture(0);
 
 				if (!vidCap->isOpened()) {
 					printf("unable to open the webcam.\n");
