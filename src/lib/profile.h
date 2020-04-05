@@ -6,7 +6,7 @@
 
 #if defined(WIN32) || defined(_WIN32) || defined(_MSC_VER) || defined(_MSC_EXTENSIONS)
 #define DELTA_EPOCH_IN_MICROSECS  11644473600000000Ui64
-#elif defined(linux) || defined(__linux__) || defined(__unix__)
+#elif defined(__APPLE__) || defined(linux) || defined(__linux__) || defined(__unix__)
 #include <sys/time.h>
 #endif
 
@@ -48,7 +48,7 @@ namespace utils {
 				gettimeofday(&mCurTime, NULL);
 				mSec = (mCurTime.tv_sec - mStartTime.tv_sec) * 1000000 + (mCurTime.tv_usec - mStartTime.tv_usec);
 				if (print) {
-					MLOGD("Time elapsed for [%s] : %.8f msec\n", mName, mSec / 1000.f);
+					MLOGD("Time elapsed for [%s] : %.8f msec\n", mName.c_str(), mSec / 1000.f);
 				}
 				return mSec / 1000.f;
 			}

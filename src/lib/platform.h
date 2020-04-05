@@ -8,4 +8,4 @@
 #endif
 
 bool FileExists(const char *filePath);
-void GetScreenResolution(size_t& width, size_t& height);
+void GetScreenResolution(int& width, int& height);

@@ -42,8 +42,8 @@ struct TestOptions {
 	double beta;
 	int m;
 	char *filepath;
-	size_t screenW;
-	size_t screenH;
+	int screenW;
+	int screenH;
 	size_t histWinW;
 	size_t histWinH;
 	LocalMethod method;
