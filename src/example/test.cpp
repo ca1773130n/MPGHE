@@ -84,7 +84,7 @@ static int SetupOptions(int argc, char *argv[], TestOptions& options)
 				} else if (!strncmp("video", optarg, 5)) {
 					options.source = IS_VIDEO;
 				} else {
-					printf("input source %s is not supported.\n");
+					printf("input source %s is not supported.\n", optarg);
 					options.source = IS_INVALID;
 					error = TEST_FAIL;
 				}
@@ -99,7 +99,7 @@ static int SetupOptions(int argc, char *argv[], TestOptions& options)
 				} else if (!strncmp("local_mean", optarg, 10)) {
 					options.method.type = LM_LOCAL_MEAN;
 				} else {
-					printf("local method %s is not supported.\n");
+					printf("local method %s is not supported.\n", optarg);
 					options.method.type = LM_INVALID;
 					error = TEST_FAIL;
 				}
@@ -127,6 +127,7 @@ static int SetupOptions(int argc, char *argv[], TestOptions& options)
 }
 
 static void Preprocess(const cv::Mat& frame, cv::Mat& resized, cv::Mat *channels, TestOptions& opt) {
+    cv::normalize(frame.clone(), frame, 50, 200, cv::NORM_MINMAX);
 	double frameRatio = (double)frame.rows / frame.cols;
 	cv::Size s;
 	
@@ -141,7 +142,13 @@ static void Preprocess(const cv::Mat& frame, cv::Mat& resized, cv::Mat *channels
 	}
 
 	cv::resize(frame, resized, s);
-	cv::split(resized, channels);
+#if NUM_CHANNELS == 1
+    cv::cvtColor(resized, *channels, cv::COLOR_RGB2GRAY);
+#else
+    cv::Mat converted;
+    cv::cvtColor(resized, converted, cv::COLOR_RGB2YCrCb);
+	cv::split(converted, channels);
+#endif
 
 	// set window size considering title bar and task bar
 	opt.histWinH = opt.screenH - s.height - 32 - 100;
@@ -182,9 +189,9 @@ int main(int argc, char *argv[])
 		cv::VideoCapture *vidCap = NULL;
 		cv::Mat frame, input;
 		cv::Mat outputHE, outputMPGHE;
-		cv::Mat histoInput[NUM_CHANNELS];
-		cv::Mat histoHE[NUM_CHANNELS];
-		cv::Mat histoMPGHE[NUM_CHANNELS];
+		cv::Mat histoInput;
+		cv::Mat histoHE;
+		cv::Mat histoMPGHE;
 		cv::Mat histoDrawInput, histoDrawHE, histoDrawMPGHE;
 		cv::Mat srcChannels[NUM_CHANNELS];
 		cv::Mat outChannelsHE[NUM_CHANNELS];
@@ -234,28 +241,41 @@ int main(int argc, char *argv[])
 
 			if (!histoDrawInput.cols) {
 				cv::Size hWinSize(options.histWinW, options.histWinH);
-				histoDrawInput.create(hWinSize, CV_8UC3);
-				histoDrawHE.create(hWinSize, CV_8UC3);
-				histoDrawMPGHE.create(hWinSize, CV_8UC3);
+				histoDrawInput.create(hWinSize, CV_8U);
+				histoDrawHE.create(hWinSize, CV_8U);
+				histoDrawMPGHE.create(hWinSize, CV_8U);
 			}
 
+            for (int i = 0; i < NUM_CHANNELS; ++i) {
+                outChannelsMPGHE[i].create(input.rows, input.cols, CV_8U);
+                outChannelsHE[i].create(input.rows, input.cols, CV_8U);
+            }
+
 			// calculate MPGHE
-			for (size_t c = 0; c < NUM_CHANNELS; ++c) {
-				error = cv::multiPeakGHE(srcChannels[c], outChannelsMPGHE[c], options);
-				if (error != TEST_OK) {
-					MLOGE("multiPeakGHE() for channel %d failed.\n", c);
-				}
-			}
+            error = cv::multiPeakGHE(srcChannels[0], outChannelsMPGHE[0], options);
+            outChannelsMPGHE[1] = srcChannels[1];
+            outChannelsMPGHE[2] = srcChannels[2];
+
+            if (error != TEST_OK) {
+                MLOGE("multiPeakGHE() for input image having (%d) channels failed.\n", NUM_CHANNELS);
+            }
 			cv::merge(outChannelsMPGHE, NUM_CHANNELS, outputMPGHE);
+#if NUM_CHANNELS == 3
+            cv::cvtColor(outputMPGHE.clone(), outputMPGHE, cv::COLOR_YCrCb2RGB);
+#endif
 
 			double timeMs = timer.getElapsed();
 			ProcessKey(cv::waitKey(1), options);
 			PrintResult(options, timeMs);
 
 			// calculate the reference Histogram Equalization result
-			for (size_t c = 0; c < NUM_CHANNELS; ++c)
-				cv::equalizeHist(srcChannels[c], outChannelsHE[c]);
+			cv::equalizeHist(srcChannels[0], outChannelsHE[0]);
+            outChannelsHE[1] = srcChannels[1];
+            outChannelsHE[2] = srcChannels[2];
 			cv::merge(outChannelsHE, NUM_CHANNELS, outputHE);
+#if NUM_CHANNELS == 3
+            cv::cvtColor(outputHE.clone(), outputHE, cv::COLOR_YCrCb2RGB);
+#endif
 
 			// calculate and draw histograms both HE and MPGHE
 			int channelIndex[1];
@@ -264,15 +284,13 @@ int main(int argc, char *argv[])
 			const float* histRanges[1] = { histRange };
 			size_t histWinH = options.histWinH * 0.8;
 
-			for (size_t c = 0; c < NUM_CHANNELS; ++c) {
-				channelIndex[0] = c;
-				cv::calcHist(&input, 1, channelIndex, cv::Mat(), histoInput[c], 1, histSize, histRanges);
-				cv::calcHist(&outputHE, 1, channelIndex, cv::Mat(), histoHE[c], 1, histSize, histRanges);
-				cv::calcHist(&outputMPGHE, 1, channelIndex, cv::Mat(), histoMPGHE[c], 1, histSize, histRanges);
-				cv::normalize(histoInput[c].clone(), histoInput[c], 0, histWinH, cv::NORM_MINMAX);
-				cv::normalize(histoHE[c].clone(), histoHE[c], 0, histWinH, cv::NORM_MINMAX);
-				cv::normalize(histoMPGHE[c].clone(), histoMPGHE[c], 0, histWinH, cv::NORM_MINMAX);
-			}
+            channelIndex[0] = 0;
+            cv::calcHist(&input, 1, channelIndex, cv::Mat(), histoInput, 1, histSize, histRanges);
+            cv::calcHist(&outputHE, 1, channelIndex, cv::Mat(), histoHE, 1, histSize, histRanges);
+            cv::calcHist(&outputMPGHE, 1, channelIndex, cv::Mat(), histoMPGHE, 1, histSize, histRanges);
+            cv::normalize(histoInput.clone(), histoInput, 0, histWinH, cv::NORM_MINMAX);
+            cv::normalize(histoHE.clone(), histoHE, 0, histWinH, cv::NORM_MINMAX);
+            cv::normalize(histoMPGHE.clone(), histoMPGHE, 0, histWinH, cv::NORM_MINMAX);
 
 			// draw histograms
 			int valCurr, valPrev;
@@ -280,7 +298,7 @@ int main(int argc, char *argv[])
 			cv::Scalar green(0, 255, 0);
 			cv::Scalar blue(255, 0, 0);
 			cv::Scalar black(0, 0, 0);
-			cv::Scalar *colors[NUM_CHANNELS] = { &blue, &green, &red };
+			cv::Scalar white(255, 255, 255);
 
 			double pointRatio = (double)options.histWinW / HISTOGRAM_RANGE;
 			histoDrawInput.setTo(black);
@@ -288,17 +306,15 @@ int main(int argc, char *argv[])
 			histoDrawMPGHE.setTo(black);
 
 			for (size_t i = 1; i < HISTOGRAM_RANGE; ++i) {
-				for (size_t c = 0; c < NUM_CHANNELS; ++c) {
-					valPrev = histoInput[c].at<float>(i - 1, 0);
-					valCurr = histoInput[c].at<float>(i, 0);
-					cv::line(histoDrawInput, cv::Point((i - 1) * pointRatio, options.histWinH - valPrev), cv::Point(i * pointRatio, options.histWinH - valCurr), *colors[c]);
-					valPrev = histoHE[c].at<float>(i - 1, 0);
-					valCurr = histoHE[c].at<float>(i, 0);
-					cv::line(histoDrawHE, cv::Point((i - 1) * pointRatio, options.histWinH - valPrev), cv::Point(i * pointRatio, options.histWinH - valCurr), *colors[c]);
-					valPrev = histoMPGHE[c].at<float>(i - 1, 0);
-					valCurr = histoMPGHE[c].at<float>(i, 0);
-					cv::line(histoDrawMPGHE, cv::Point((i - 1) * pointRatio, options.histWinH - valPrev), cv::Point(i * pointRatio, options.histWinH - valCurr), *colors[c]);
-				}
+                valPrev = histoInput.at<float>(i - 1, 0);
+                valCurr = histoInput.at<float>(i, 0);
+                cv::line(histoDrawInput, cv::Point((i - 1) * pointRatio, options.histWinH - valPrev), cv::Point(i * pointRatio, options.histWinH - valCurr), white);
+                valPrev = histoHE.at<float>(i - 1, 0);
+                valCurr = histoHE.at<float>(i, 0);
+                cv::line(histoDrawHE, cv::Point((i - 1) * pointRatio, options.histWinH - valPrev), cv::Point(i * pointRatio, options.histWinH - valCurr), white);
+                valPrev = histoMPGHE.at<float>(i - 1, 0);
+                valCurr = histoMPGHE.at<float>(i, 0);
+                cv::line(histoDrawMPGHE, cv::Point((i - 1) * pointRatio, options.histWinH - valPrev), cv::Point(i * pointRatio, options.histWinH - valCurr), white);
 			}
 
 			// show the result images

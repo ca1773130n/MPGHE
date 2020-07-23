@@ -12,7 +12,7 @@
 #define DEFAULT_BETA		0.01
 #define DEFAULT_BETA_STEP	0.005
 #define DEFAULT_M			1
-#define DEFAULT_METHOD	LM_LAPLACIAN
+#define DEFAULT_METHOD	    LM_LAPLACIAN
 #define DEFAULT_SOURCE		IS_WEBCAM
 
 // internal options
